@@ -1,6 +1,7 @@
 var express = require('express');
 var bodyParser = require('body-parser');
 var _ = require('underscore');
+var db = require('./db.js');
 
 var app = express();
 var PORT = process.env.PORT || 3000;
@@ -20,35 +21,69 @@ app.get('/', function (req, res) {
 
 //GET /todd?completed=true
 app.get('/todos', function(req, res){
-    var queryParams = req.query;
-    var fliteredTodos = todos;
+    var query = req.query;
+    var where = {};
     
-    if(queryParams.hasOwnProperty('completed') && queryParams.completed === 'true'){
-        fliteredTodos = _.where(fliteredTodos, {completed: true});
-    }else if(queryParams.hasOwnProperty('completed') && queryParams.completed === 'false'){
-        fliteredTodos = _.where(fliteredTodos, {completed: false});
+    if(query.hasOwnProperty('completed') && query.completed === 'true'){
+         where.completed = true;
+     } else if(query.hasOwnProperty('completed') && query.completed === 'false'){
+         where.completed = false;
+     }
+    
+    if(query.hasOwnProperty('q') && query.q.length > 0 ){
+        where.description = {
+            $like: '%' + query.q + '%'
+        };
     }
     
-    if(queryParams.hasOwnProperty('q') && queryParams.q.length > 0 ){
-        fliteredTodos = _.filter(fliteredTodos, function (todo){
-            return todo.description.toLowerCase().indexOf(queryParams.q.toLowerCase()) > -1;
-        })
+    db.todo.findAll({where: where}).then(function (todos){
+        res.json(todos);}, function (e){
+        res.status(500).send();
     }
+    )
     
-    res.json(fliteredTodos) 
+//    var fliteredTodos = todos;
+//    
+//    if(queryParams.hasOwnProperty('completed') && queryParams.completed === 'true'){
+//        fliteredTodos = _.where(fliteredTodos, {completed: true});
+//    }else if(queryParams.hasOwnProperty('completed') && queryParams.completed === 'false'){
+//        fliteredTodos = _.where(fliteredTodos, {completed: false});
+//    }
+//    
+//    if(queryParams.hasOwnProperty('q') && queryParams.q.length > 0 ){
+//        fliteredTodos = _.filter(fliteredTodos, function (todo){
+//            return todo.description.toLowerCase().indexOf(queryParams.q.toLowerCase()) > -1;
+//        })
+//    }
+//    
+//    res.json(fliteredTodos) 
 })
 
 //GET /todo/:id
 app.get('/todos/:id', function(req, res){
     var todoId = parseInt(req.params.id, 10);
-    var matchedTodo = _.findWhere(todos, {id: todoId});
-
     
-    if(matchedTodo){
-        res.json(matchedTodo);
-    }else {
+    db.todo.findById(todoId).then(function (todo) {
+        if(!!todo){
+        res.json(todo.toJSON());    
+        }
+        else {
         res.status(404).send();
-    }
+        }
+    }, function (e){
+        res.status(500).send();
+        
+    })
+
+
+//    var matchedTodo = _.findWhere(todos, {id: todoId});
+//
+//    
+//    if(matchedTodo){
+//        res.json(matchedTodo);
+//    }else {
+//        res.status(404).send();
+//    }
     
 });
 
@@ -56,16 +91,22 @@ app.get('/todos/:id', function(req, res){
 app.post('/todos', function (req, res) {
    var body = _.pick(req.body, 'description', 'completed');
     
-   if(!_.isBoolean(body.completed) || !_.isString(body.description) || body.description.trim().length === 0){
-       return res.status(400).send();
-   }
-   body.description = body.description.trim();
-   body.id = todoNextId++;
-
-   todos.push(body)
+    db.todo.create(body).then(function(todo){
+        res.json(todo.toJSON());        
+    },function(e){
+        res.status(400).json(e);
+    });
     
-   console.log('description: ' + body.description);
-   res.json(body);
+//   if(!_.isBoolean(body.completed) || !_.isString(body.description) || body.description.trim().length === 0){
+//       return res.status(400).send();
+//   }
+//   body.description = body.description.trim();
+//   body.id = todoNextId++;
+//
+//   todos.push(body)
+//    
+//   console.log('description: ' + body.description);
+//   res.json(body);
 });
 
 //DELETE /todos/:id
@@ -110,6 +151,9 @@ app.put('/todos/:id', function(req, res){
     
 });
 
-app.listen(PORT, function() {
+db.sequelize.sync().then(function() {
+    app.listen(PORT, function() {
     console.log('Express listen on port ' + PORT + '!')
 });
+})
+
